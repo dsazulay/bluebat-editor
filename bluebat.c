@@ -776,8 +776,8 @@ void editorScroll() {
     if (E.rx < E.coloff) {
         E.coloff = E.rx;
     }
-    if (E.rx >= E.coloff + E.screencols) {
-        E.coloff = E.rx - E.screencols + 1;
+    if (E.rx + E.cxoffset >= E.coloff + E.screencols) {
+        E.coloff = E.rx - E.screencols + 1 + E.cxoffset;
     }
 }
 
@@ -810,15 +810,15 @@ void editorDrawRows(struct abuf *ab) {
             }
         } else {
             int len = E.row[filerow].rsize - E.coloff;
+            char lineNumber[16];
+            int lineLen = snprintf(lineNumber, sizeof(lineNumber), "%*d ", E.cxoffset, filerow + 1);
+            abAppend(ab, lineNumber, lineLen);
             if (len < 0) len = 0;
-            if (len > E.screencols) len = E.screencols;
+            if (len > E.screencols - lineLen) len = E.screencols - lineLen;
             char *c = &E.row[filerow].render[E.coloff];
             unsigned char *hl = &E.row[filerow].hl[E.coloff];
             int current_color = -1;
             int j;
-            char lineNumber[16];
-            int lineLen = snprintf(lineNumber, sizeof(lineNumber), "%*d ", E.cxoffset, filerow + 1);
-            abAppend(ab, lineNumber, lineLen);
             for (j = 0; j < len; j++) {
                 if (iscntrl(c[j])) {
                     char sym = (c[j] <= 26) ? '@' + c[j] : '?';
