@@ -7,7 +7,7 @@
 #include <ctype.h>      // isdigit, isspace, iscntrl
 #include <errno.h>      // errno, EAGAIN
 #include <fcntl.h>      // open, O_CREAT, O_RWDR
-#include <stdio.h>      // FILE, perror, sscanf,  snprintf, fopen, getline, vsnprintf
+#include <stdio.h>      // FILE, perror, sscanf, snprintf, fopen, getline, vsnprintf
 #include <stdarg.h>     // va_end, va_start, va_list
 #include <stdlib.h>     // atexit, exit, realloc, free, malloc
 #include <string.h>     // memcpy, strlen, strdup, memmove, strerror, strstr, memset, strchr, strrchr, strcmp, strncmp
@@ -35,7 +35,11 @@ enum editorKey {
     HOME_KEY,
     END_KEY,
     PAGE_UP,
-    PAGE_DOWN
+    PAGE_DOWN,
+    ALT_UP,
+    ALT_DOWN,
+    ALT_RIGHT,
+    ALT_LEFT
 };
 
 enum editorHighlight {
@@ -215,6 +219,17 @@ int editorReadKey() {
             switch (seq[1]) {
                 case 'H': return HOME_KEY;
                 case 'F': return END_KEY;
+            }
+        // processing alt-key
+        } else if (seq[0] == '\x1b') {
+            if (seq[1] == '[') {
+                if (read(STDIN_FILENO, &seq[2], 1) != 1) return '\x1b';
+                switch(seq[2]) {
+                    case 'A': return ALT_UP;
+                    case 'B': return ALT_DOWN;
+                    case 'C': return ALT_RIGHT;
+                    case 'D': return ALT_LEFT;
+                }
             }
         }
         return '\x1b';
@@ -990,6 +1005,24 @@ void editorMoveCursor(int key) {
                 E.cy++;
             }
             break;
+        case ALT_RIGHT:
+            if (row && E.cx < row->size) {
+                if (is_separator(row->chars[E.cx])) {
+                    while(is_separator(row->chars[E.cx])) E.cx++;
+                } else {
+                    while(!is_separator(row->chars[E.cx])) E.cx++;
+                }
+            }
+            break;
+        case ALT_LEFT:
+            if (E.cx != 0) {
+                if (is_separator(row->chars[E.cx])) {
+                    while(is_separator(row->chars[E.cx]) && E.cx > 0) E.cx--;
+                } else {
+                    while(!is_separator(row->chars[E.cx]) && E.cx > 0) E.cx--;
+                }
+            }
+            break;
     }
 
     row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
@@ -1067,6 +1100,13 @@ void editorProcessKeypress() {
             editorMoveCursor(c);
             break;
         
+        case ALT_UP:
+        case ALT_DOWN:
+        case ALT_LEFT:
+        case ALT_RIGHT:
+            editorMoveCursor(c);
+            break;
+
         case CTRL_KEY('l'):
         case '\x1b':
             break;
