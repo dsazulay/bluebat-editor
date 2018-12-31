@@ -380,12 +380,12 @@ void editorUpdateSyntax(erow *row) {
 int editorSyntaxToColor(int hl) {
     switch (hl) {
         case HL_COMMENT:
-        case HL_MLCOMMENT: return 36;
-        case HL_KEYWORD1: return 33;
-        case HL_KEYWORD2: return 32;
-        case HL_STRING: return 35;
-        case HL_NUMBER: return 31;
-        case HL_MATCH: return 34;
+        case HL_MLCOMMENT: return 36;   // Cyan
+        case HL_KEYWORD1: return 33;    // Yellow
+        case HL_KEYWORD2: return 32;    // Green
+        case HL_STRING: return 35;      // Magenta
+        case HL_NUMBER: return 31;      // Red
+        case HL_MATCH: return 34;       // Blue
         default: return 37;
     }
 }
@@ -781,6 +781,14 @@ void editorScroll() {
     }
 }
 
+int editorDrawLineNumbers(struct abuf *ab, int number) {
+    char lineNumber[16];
+    // Display lines in blue
+    int lineLen = snprintf(lineNumber, sizeof(lineNumber), "\x1b[34m%*d\x1b[0m ", E.cxoffset, number);
+    abAppend(ab, lineNumber, lineLen);
+    return E.cxoffset + 1;
+}
+
 void editorDrawRows(struct abuf *ab) {
     int y;
     for (y = 0; y < E.screenrows; y++) {
@@ -801,18 +809,14 @@ void editorDrawRows(struct abuf *ab) {
                     while (padding--) abAppend(ab, " ", 1);
                     abAppend(ab, welcome, welcomelen);
                 } else if (y == 0) {
-                    char lineNumber[16];
-                    int lineLen = snprintf(lineNumber, sizeof(lineNumber), "%*d ", E.cxoffset, filerow + 1);
-                    abAppend(ab, lineNumber, lineLen);
+                    editorDrawLineNumbers(ab, filerow + 1);
                 } else {
                     abAppend(ab, "~", 1);
                 }
             }
         } else {
+            int lineLen = editorDrawLineNumbers(ab, filerow + 1);
             int len = E.row[filerow].rsize - E.coloff;
-            char lineNumber[16];
-            int lineLen = snprintf(lineNumber, sizeof(lineNumber), "%*d ", E.cxoffset, filerow + 1);
-            abAppend(ab, lineNumber, lineLen);
             if (len < 0) len = 0;
             if (len > E.screencols - lineLen) len = E.screencols - lineLen;
             char *c = &E.row[filerow].render[E.coloff];
