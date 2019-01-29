@@ -39,7 +39,13 @@ enum editorKey {
     ALT_UP,
     ALT_DOWN,
     ALT_RIGHT,
-    ALT_LEFT
+    ALT_LEFT,
+    SHIFT_UP,
+    SHIFT_DOWN,
+    SHIFT_LEFT,
+    SHIFT_RIGHT,
+    SHIFT_HOME,
+    SHIFT_END
 };
 
 enum editorHighlight {
@@ -94,6 +100,8 @@ struct editorConfig {
     struct editorSyntax *syntax;
     struct termios orig_termios;
     int cxoffset;
+    char *select_buffer;
+    int select_buffer_size;
 };
 
 struct editorConfig E;
@@ -203,6 +211,23 @@ int editorReadKey() {
                         case '6': return PAGE_DOWN;
                         case '7': return HOME_KEY;
                         case '8': return END_KEY;
+                    }
+                // processing shif-key
+                } else if (seq[2] == ';') {
+                    char sseq[2];
+
+                    if (read(STDIN_FILENO, &sseq[0], 1) != 1) return '\x1b';
+                    if (read(STDIN_FILENO, &sseq[1], 1) != 1) return '\x1b';
+
+                    if (sseq[0] == '2') {
+                        switch (sseq[1]) {
+                            case 'A': return SHIFT_UP;
+                            case 'B': return SHIFT_DOWN;
+                            case 'C': return SHIFT_RIGHT;
+                            case 'D': return SHIFT_LEFT;
+                            case 'H': return SHIFT_HOME;
+                            case 'F': return SHIFT_END;
+                        }
                     }
                 }
             } else {
@@ -530,6 +555,60 @@ void editorRowInsertChar(erow *row, int at, int c) {
     row->chars[at] = c;
     editorUpdateRow(row);
     E.dirty++;
+}
+
+void editorFreeSelectBuffer() {
+    free(E.select_buffer);
+    E.select_buffer = NULL;
+    E.select_buffer_size = 0;
+}
+
+void editorSelectChar(int key, int *last_direction) {
+
+    if (key == SHIFT_RIGHT && (*last_direction == 1 || *last_direction == 0)) {
+        E.select_buffer = realloc(E.select_buffer, E.select_buffer_size + 2);
+        E.select_buffer[E.select_buffer_size] = E.row[E.cy].chars[E.cx];
+        E.select_buffer_size++;
+        E.select_buffer[E.select_buffer_size] = '\0';
+        editorSetStatusMessage(E.select_buffer);
+        *last_direction = 1;
+    }
+
+    else if (key == SHIFT_LEFT && (*last_direction == -1 || *last_direction == 0)) {
+        if (E.cx - 1 < 0) return;
+        E.select_buffer = realloc(E.select_buffer, E.select_buffer_size + 2);
+        memmove(&E.select_buffer[1], &E.select_buffer[0], E.select_buffer_size);
+        E.select_buffer[0] = E.row[E.cy].chars[E.cx - 1];
+        E.select_buffer_size++;
+        E.select_buffer[E.select_buffer_size] = '\0';
+        editorSetStatusMessage(E.select_buffer);
+        *last_direction = -1;
+    }
+
+    else if (key == SHIFT_LEFT && *last_direction == 1) {
+        E.select_buffer = realloc(E.select_buffer, E.select_buffer_size);
+        E.select_buffer_size--;
+        E.select_buffer[E.select_buffer_size] = '\0';
+        editorSetStatusMessage(E.select_buffer);
+        if (E.select_buffer_size == 0) {
+            editorFreeSelectBuffer();
+            *last_direction = 0;
+            E.select_buffer = NULL;
+        }
+    }
+
+    else if (key == SHIFT_RIGHT && *last_direction == -1) {
+        memmove(&E.select_buffer[0], &E.select_buffer[1], E.select_buffer_size - 1);
+        E.select_buffer = realloc(E.select_buffer, E.select_buffer_size);
+        E.select_buffer_size--;
+        E.select_buffer[E.select_buffer_size] = '\0';
+        editorSetStatusMessage(E.select_buffer);
+        if (E.select_buffer_size == 0) {
+            editorFreeSelectBuffer();
+            *last_direction = 0;
+            E.select_buffer = NULL;
+        }
+    }
 }
 
 void editorRowAppendString(erow *row, char *s, size_t len) {
@@ -1032,8 +1111,27 @@ void editorMoveCursor(int key) {
     }
 }
 
+void editorSelect(int key, int *selecting_direction) {
+    switch (key) {
+        case SHIFT_LEFT:
+            editorSelectChar(SHIFT_LEFT, selecting_direction);
+            editorMoveCursor(ARROW_LEFT);
+            break;
+        case SHIFT_RIGHT:
+            editorSelectChar(SHIFT_RIGHT, selecting_direction);
+            editorMoveCursor(ARROW_RIGHT);
+            break;
+    }
+}
+
+void editorDeselect() {
+    editorFreeSelectBuffer();
+}
+
 void editorProcessKeypress() {
     static int quit_times = BLUEBAT_QUIT_TIMES;
+    static int selecting = -1;
+    static int selecting_direction = 0;
 
     int c = editorReadKey();
 
@@ -1091,6 +1189,11 @@ void editorProcessKeypress() {
         case ARROW_DOWN:
         case ARROW_LEFT:
         case ARROW_RIGHT:
+            if (selecting == 1) {
+                editorDeselect();
+                selecting = -1;
+                selecting_direction = 0;
+            }
             editorMoveCursor(c);
             break;
         
@@ -1098,7 +1201,22 @@ void editorProcessKeypress() {
         case ALT_DOWN:
         case ALT_LEFT:
         case ALT_RIGHT:
+            if (selecting == 1) {
+                editorDeselect();
+                selecting = -1;
+                selecting_direction = 0;
+            }
             editorMoveCursor(c);
+            break;
+
+        case SHIFT_UP:
+        case SHIFT_DOWN:
+        case SHIFT_LEFT:
+        case SHIFT_RIGHT:
+            if (selecting == -1) {
+                selecting = 1;
+            }
+            editorSelect(c, &selecting_direction);
             break;
 
         case CTRL_KEY('l'):
@@ -1129,6 +1247,8 @@ void initEditor() {
     E.statusmsg_time = 0;
     E.syntax = NULL;
     E.cxoffset = 3;
+    E.select_buffer = NULL;
+    E.select_buffer_size = 0;
 
     if (getWindowSize(&E.screenrows, &E.screencols) == -1) die("getWindowSize");
     E.screenrows -= 2;
