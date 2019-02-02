@@ -105,8 +105,8 @@ struct editorConfig {
     struct editorSyntax *syntax;
     struct termios orig_termios;
     int cxoffset;
-    char *select_buffer;
-    int select_buffer_size;
+    int select_buffer_numrows;
+    buffer_row *select_buffer;
 };
 
 struct editorConfig E;
@@ -562,60 +562,6 @@ void editorRowInsertChar(erow *row, int at, int c) {
     E.dirty++;
 }
 
-void editorFreeSelectBuffer() {
-    free(E.select_buffer);
-    E.select_buffer = NULL;
-    E.select_buffer_size = 0;
-}
-
-void editorSelectChar(int key, int *last_direction) {
-
-    if (key == SHIFT_RIGHT && (*last_direction == 1 || *last_direction == 0)) {
-        E.select_buffer = realloc(E.select_buffer, E.select_buffer_size + 2);
-        E.select_buffer[E.select_buffer_size] = E.row[E.cy].chars[E.cx];
-        E.select_buffer_size++;
-        E.select_buffer[E.select_buffer_size] = '\0';
-        editorSetStatusMessage(E.select_buffer);
-        *last_direction = 1;
-    }
-
-    else if (key == SHIFT_LEFT && (*last_direction == -1 || *last_direction == 0)) {
-        if (E.cx - 1 < 0) return;
-        E.select_buffer = realloc(E.select_buffer, E.select_buffer_size + 2);
-        memmove(&E.select_buffer[1], &E.select_buffer[0], E.select_buffer_size);
-        E.select_buffer[0] = E.row[E.cy].chars[E.cx - 1];
-        E.select_buffer_size++;
-        E.select_buffer[E.select_buffer_size] = '\0';
-        editorSetStatusMessage(E.select_buffer);
-        *last_direction = -1;
-    }
-
-    else if (key == SHIFT_LEFT && *last_direction == 1) {
-        E.select_buffer = realloc(E.select_buffer, E.select_buffer_size);
-        E.select_buffer_size--;
-        E.select_buffer[E.select_buffer_size] = '\0';
-        editorSetStatusMessage(E.select_buffer);
-        if (E.select_buffer_size == 0) {
-            editorFreeSelectBuffer();
-            *last_direction = 0;
-            E.select_buffer = NULL;
-        }
-    }
-
-    else if (key == SHIFT_RIGHT && *last_direction == -1) {
-        memmove(&E.select_buffer[0], &E.select_buffer[1], E.select_buffer_size - 1);
-        E.select_buffer = realloc(E.select_buffer, E.select_buffer_size);
-        E.select_buffer_size--;
-        E.select_buffer[E.select_buffer_size] = '\0';
-        editorSetStatusMessage(E.select_buffer);
-        if (E.select_buffer_size == 0) {
-            editorFreeSelectBuffer();
-            *last_direction = 0;
-            E.select_buffer = NULL;
-        }
-    }
-}
-
 void editorRowAppendString(erow *row, char *s, size_t len) {
     row->chars = realloc(row->chars, row->size + len + 1);
     memcpy(&row->chars[row->size], s, len);
@@ -631,6 +577,75 @@ void editorRowDelChar(erow *row, int at) {
     row->size--;
     editorUpdateRow(row);
     E.dirty++;
+}
+
+/*** selection operations ***/
+
+void editorFreeBufferRow(buffer_row *row) {
+    free(row->chars);
+}
+
+void editorFreeSelectBuffer() {
+    for (int i = 0; i < E.select_buffer_numrows; i++) {
+        editorFreeBufferRow(&E.select_buffer[i]);
+    }
+    free(E.select_buffer);
+    E.select_buffer = NULL;
+    E.select_buffer_numrows = 0;
+}
+
+void editorSelectChar(int key, int *last_direction) {
+    if (E.select_buffer_numrows == 0) {
+        E.select_buffer = realloc(E.select_buffer, sizeof(buffer_row) * (E.select_buffer_numrows + 1));
+        E.select_buffer[0].chars = NULL;
+        E.select_buffer[0].size = 0;
+        E.select_buffer_numrows++;
+    }
+
+    buffer_row *row = &E.select_buffer[0];
+
+    if (key == SHIFT_RIGHT && (*last_direction == 1 || *last_direction == 0)) {
+        row->chars = realloc(row->chars, row->size + 2);
+        row->chars[row->size] = E.row[E.cy].chars[E.cx];
+        row->size++;
+        row->chars[row->size] = '\0';
+        editorSetStatusMessage(row->chars);
+        *last_direction = 1;
+    }
+
+    else if (key == SHIFT_LEFT && (*last_direction == -1 || *last_direction == 0)) {
+        if (E.cx - 1 < 0) return;
+        row->chars = realloc(row->chars, row->size + 2);
+        memmove(&row->chars[1], &row->chars[0], row->size);
+        row->chars[0] = E.row[E.cy].chars[E.cx - 1];
+        row->size++;
+        row->chars[row->size] = '\0';
+        editorSetStatusMessage(row->chars);
+        *last_direction = -1;
+    }
+
+    else if (key == SHIFT_LEFT && *last_direction == 1) {
+        row->chars = realloc(row->chars, row->size);
+        row->size--;
+        row->chars[row->size] = '\0';
+        editorSetStatusMessage(row->chars);
+        if (row->size == 0) {
+            editorFreeSelectBuffer();
+            *last_direction = 0;
+        }
+    }
+
+    else if (key == SHIFT_RIGHT && *last_direction == -1) {
+        memmove(&row->chars[0], &row->chars[1], row->size - 1);
+        row->chars = realloc(row->chars, row->size);
+        row->size--;
+        row->chars[row->size] = '\0';
+        editorSetStatusMessage(row->chars);
+        if (row->size == 0) {
+            editorFreeSelectBuffer();
+            *last_direction = 0;
+        }
+    }
 }
 
 /*** editor operations ***/
@@ -1252,8 +1267,8 @@ void initEditor() {
     E.statusmsg_time = 0;
     E.syntax = NULL;
     E.cxoffset = 3;
+    E.select_buffer_numrows = 0;
     E.select_buffer = NULL;
-    E.select_buffer_size = 0;
 
     if (getWindowSize(&E.screenrows, &E.screencols) == -1) die("getWindowSize");
     E.screenrows -= 2;
