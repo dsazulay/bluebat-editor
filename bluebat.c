@@ -20,7 +20,7 @@
 /*** defines ***/
 
 #define BLUEBAT_VERSION "0.0.1"
-#define BLUEBAT_TAB_STOP 8
+#define BLUEBAT_TAB_STOP 4
 #define BLUEBAT_QUIT_TIMES 1
 
 #define CTRL_KEY(k) ((k) & 0x1f)
@@ -84,6 +84,11 @@ typedef struct erow {
     int hl_open_comment;
 } erow;
 
+typedef struct buffer_row {
+    int size;
+    char *chars;
+} buffer_row;
+
 struct editorConfig {
     int cx, cy;
     int rx;
@@ -119,8 +124,8 @@ char *C_HL_keywords[] = {
     "#udef"
     // C types
     "bool|", "char|", "double|", "enum|", "float|", "int|", "long|", "short|",
-    "signed|", "struct|", "typedef|", "union|", "unsigned|", "void|" "volatile", 
-    NULL
+    "signed|", "struct|", "typedef|", "union|", "unsigned|", "void|", "volatile", 
+    "NULL|", NULL
 };
 
 struct editorSyntax HLDB[] = {
